@@ -4,6 +4,7 @@ import CryptoKit
 import TokenIslandCore
 
 @MainActor final class IslandStore: ObservableObject {
+    let loginItem = LoginItemController(service: SystemLoginItemService())
     @Published var snapshot: UsageSnapshot?
     @Published var hours: [HourUsage] = []
     @Published var isRefreshing = false
@@ -130,6 +131,7 @@ import TokenIslandCore
     }
     func openUsage() { NSWorkspace.shared.open(URL(string: "https://chatgpt.com/#settings/Usage")!) }
     func setExpanded(_ value: Bool) {
+        if value { loginItem.refresh() }
         guard expanded != value else { return }
         if let onExpansionChange { onExpansionChange(value) }
         else { expanded = value }

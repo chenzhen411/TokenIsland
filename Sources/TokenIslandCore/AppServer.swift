@@ -51,7 +51,7 @@ import Foundation
         do {
             try child.run()
             _ = try await request("initialize", params: [
-                "clientInfo": ["name": "tokenisland", "title": "TokenIsland", "version": "0.2.1"],
+                "clientInfo": ["name": "tokenisland", "title": "TokenIsland", "version": "0.3.0"],
                 "capabilities": ["experimentalApi": true]
             ])
             try send(["method": "initialized", "params": [:]])

@@ -112,6 +112,9 @@ struct IslandView: View {
             else { Menu {
                 Button("打开 ChatGPT", action: store.openChatGPT)
                 Button("查看官方用量", action: store.openUsage)
+                Divider()
+                LoginItemMenu(controller: store.loginItem)
+                Divider()
                 Button(store.isDemo ? "退出演示" : "预览演示数据") { store.setDemo(!store.isDemo) }
                 Divider()
                 Button("退出 TokenIsland") { NSApplication.shared.terminate(nil) }
