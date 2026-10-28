@@ -40,7 +40,19 @@
 open dist/TokenIsland.app
 ```
 
-生成 `dist/TokenIsland.app` 和 `dist/TokenIsland.zip`，是本机架构的 ad-hoc 签名版本。推荐将 ZIP 解压到本机“应用程序”后运行，避免 iCloud / File Provider 给 `.app` 目录添加元数据影响签名。向其他用户分发前，需要 Developer ID 签名和公证；当前未生成公开发布版本。
+生成 `dist/TokenIsland.app` 和 `dist/TokenIsland.zip`，是本机架构的 ad-hoc 签名版本。推荐将应用安装到本机“应用程序”后运行，避免 iCloud / File Provider 给 `.app` 目录添加元数据影响签名。当前构建尚未进行 Developer ID 签名和 Apple 公证。
+
+## DMG 安装包与 Release
+
+从 [GitHub Releases](https://github.com/chenzhen411/TokenIsland/releases) 下载与处理器架构匹配的 DMG，打开后将 `TokenIsland.app` 拖入 `Applications`，再从“应用程序”启动。当前发布的 `arm64` 包适用于 Apple Silicon，要求 macOS 14 或以上。
+
+生成 DMG 与 SHA-256 校验文件：
+
+```sh
+./scripts/build-dmg.sh
+```
+
+脚本会先构建 Release 应用、验证签名，再生成包含应用、Applications 快捷入口和安装说明的只读压缩镜像。输出为 `dist/TokenIsland-<版本>-macos-<架构>.dmg` 与对应 `.dmg.sha256`。CI 同时保留 ZIP、DMG 和校验文件。
 
 开发与检查：
 

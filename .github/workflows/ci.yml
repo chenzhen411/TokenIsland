@@ -11,9 +11,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Test
         run: ./scripts/test.sh
-      - name: Build app
-        run: ./scripts/build-app.sh
+      - name: Build DMG
+        run: ./scripts/build-dmg.sh
       - uses: actions/upload-artifact@v4
         with:
           name: TokenIsland-macOS
-          path: dist/TokenIsland.zip
+          path: |
+            dist/TokenIsland.zip
+            dist/*.dmg
+            dist/*.sha256
