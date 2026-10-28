@@ -7,13 +7,12 @@ private let secondaryInk = Color.white.opacity(0.46)
 
 struct IslandView: View {
     @ObservedObject var store: IslandStore
-    var onHover: (Bool) -> Void = { _ in }
     var forExport = false
 
     var body: some View {
         VStack(spacing: 0) {
             compactHeader
-            if store.expanded {
+                .frame(width: store.expanded ? store.expandedWidth : store.compactWidth)
                 VStack(alignment: .leading, spacing: 0) {
                     brandHeader.padding(.bottom, 23)
                     if store.snapshot != nil {
@@ -27,28 +26,36 @@ struct IslandView: View {
                 .padding(.horizontal, 26)
                 .padding(.top, 17)
                 .padding(.bottom, 20)
-                .frame(height: store.detailHeight)
-            }
+                .frame(width: store.expandedWidth, height: store.detailHeight)
+                .transaction { $0.animation = nil }
+                .opacity(store.expanded ? 1 : 0)
+                .allowsHitTesting(store.expanded)
+                .accessibilityHidden(!store.expanded)
         }
-        .frame(width: store.expanded ? store.expandedWidth : store.compactWidth)
+        .frame(width: store.expandedWidth, height: store.expandedHeight, alignment: .top)
         .background(Color.black)
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: store.expanded ? 28 : 17,
-                                          bottomTrailingRadius: store.expanded ? 28 : 17, topTrailingRadius: 0))
         .overlay(alignment: .bottom) {
-            if store.expanded { Capsule().fill(.white.opacity(0.18)).frame(width: 32, height: 3).padding(.bottom, 7) }
+            Capsule().fill(.white.opacity(0.18)).frame(width: 32, height: 3).padding(.bottom, 7)
+                .opacity(store.expanded ? 1 : 0)
+        }
+        .mask(alignment: .top) {
+            UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: store.expanded ? 28 : 17,
+                                   bottomTrailingRadius: store.expanded ? 28 : 17, topTrailingRadius: 0)
+                .frame(width: store.expanded ? store.expandedWidth : store.compactWidth,
+                       height: store.expanded ? store.expandedHeight : store.headerHeight)
         }
         .foregroundStyle(.white)
         .font(.system(size: 12))
         .preferredColorScheme(.dark)
-        .onHover(perform: onHover)
     }
 
     private var compactHeader: some View {
+        Button(action: store.toggleExpanded) {
         HStack(spacing: 0) {
             HStack(spacing: 5) {
-                Image(systemName: store.signedOut ? "person.crop.circle.badge.exclamationmark" : "sparkle")
+                Image(systemName: store.signedOut ? "person.crop.circle.badge.exclamationmark" : store.usageScope == .account ? "cloud" : "desktopcomputer")
                     .font(.system(size: 11, weight: .semibold)).foregroundStyle(mint)
-                Text(store.signedOut ? "请登录" : TokenFormat.compact(store.todayTokens))
+                Text(store.signedOut ? "请登录" : store.compactTokenText)
                     .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
             }.frame(maxWidth: .infinity)
             if store.notchWidth > 0 { Color.clear.frame(width: store.notchWidth) }
@@ -62,13 +69,15 @@ struct IslandView: View {
                 if store.isDemo { Circle().fill(.orange).frame(width: 4, height: 4) }
             }.frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 8)
         .frame(height: store.headerHeight)
         .contentShape(Rectangle())
-        .onTapGesture { store.setExpanded(true) }
-        .help(store.isDemo ? "演示数据" : "今日 Token · 订阅窗口剩余额度")
+        }
+        .buttonStyle(.plain)
+        .help(store.expanded ? "点击收起" : "点击展开 · \(store.usageScope.title)今日 Token · 订阅窗口剩余额度")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("今日 Token \(TokenFormat.compact(store.todayTokens))，剩余额度 \(store.quotaText)")
+        .accessibilityLabel("\(store.usageScope.title)今日 Token \(store.compactTokenText)，剩余额度 \(store.quotaText)")
+        .accessibilityValue(store.expanded ? "已展开" : "已收起")
     }
 
     private var brandHeader: some View {
@@ -86,10 +95,10 @@ struct IslandView: View {
                 Text("演示").font(.system(size: 9, weight: .medium)).foregroundStyle(.orange)
                     .padding(.horizontal, 7).padding(.vertical, 4).background(.orange.opacity(0.13), in: Capsule())
             }
-            Button { store.togglePin() } label: {
-                Image(systemName: store.pinned ? "pin.fill" : "pin").foregroundStyle(store.pinned ? mint : secondaryInk)
+            Button { store.setExpanded(false) } label: {
+                Image(systemName: "chevron.up").foregroundStyle(secondaryInk)
                     .frame(width: 26, height: 26).contentShape(Rectangle())
-            }.buttonStyle(.plain).help(store.pinned ? "取消固定" : "固定展开")
+            }.buttonStyle(.plain).help("收起灵动岛")
             if forExport { Image(systemName: "ellipsis").foregroundStyle(secondaryInk).frame(width: 24, height: 24) }
             else { Menu {
                 Button("打开 ChatGPT", action: store.openChatGPT)
@@ -105,9 +114,21 @@ struct IslandView: View {
 
     private var dashboard: some View {
         VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 0) {
+                ForEach(UsageScope.allCases, id: \.self) { scope in
+                    Button { store.usageScope = scope } label: {
+                        Text(scope.title).font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(store.usageScope == scope ? mint : secondaryInk)
+                            .frame(maxWidth: .infinity).padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 5).fill(store.usageScope == scope ? mint.opacity(0.12) : .clear))
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityValue(store.usageScope == scope ? "已选择" : "未选择")
+                }
+            }.padding(2).background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
+                .help("账号统计覆盖服务端已汇总活动；本机实时统计桌面任务记录")
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(store.snapshot?.localUsage == nil ? "今日 TOKEN" : "今日 TOKEN · 本机").font(.system(size: 10, weight: .medium)).tracking(1.3).foregroundStyle(secondaryInk)
+                    Text(store.usageScope == .account ? "今日 TOKEN · 账号" : "今日 TOKEN · 本机").font(.system(size: 10, weight: .medium)).tracking(1.3).foregroundStyle(secondaryInk)
                     HStack(alignment: .firstTextBaseline, spacing: 7) {
                         Text(TokenFormat.compact(store.todayTokens))
                             .font(.system(size: 34, weight: .medium, design: .rounded)).tracking(-1.5).monospacedDigit()
@@ -123,6 +144,15 @@ struct IslandView: View {
                     Text(Date(), format: .dateTime.month(.abbreviated).day())
                         .font(.system(size: 10)).foregroundStyle(secondaryInk)
                 }.padding(.top, 4)
+            }
+            if store.usageScope == .account, store.todayTokens == nil {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("账号今日用量待同步").foregroundStyle(mint.opacity(0.8))
+                    if let latest = store.snapshot?.latestAccountDay {
+                        Text("最近已同步 \(latest.startDate) · \(TokenFormat.compact(latest.tokens)) tokens")
+                            .foregroundStyle(secondaryInk)
+                    }
+                }.font(.system(size: 10))
             }
             quotaCard
             hourlyChart
@@ -170,7 +200,7 @@ struct IslandView: View {
     private var hourlyChart: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Text("今日消耗").font(.system(size: 12, weight: .medium))
+                Text(store.usageScope == .account ? "账号增量观测" : "今日消耗").font(.system(size: 12, weight: .medium))
                 Spacer()
                 Text("按小时").font(.system(size: 9)).foregroundStyle(secondaryInk)
             }
@@ -200,13 +230,19 @@ struct IslandView: View {
                 }
             }
             .frame(height: 88)
+            .accessibilityLabel("今日按小时观测的 Token 消耗")
             .overlay {
                 if store.hours.isEmpty {
-                    Text("正在等待小时采样").font(.system(size: 11)).foregroundStyle(secondaryInk)
-                        .padding(8).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 6))
+                    VStack(spacing: 7) {
+                        Text(store.usageScope == .account ? "账号接口未提供小时明细" : "本机暂无小时记录")
+                            .font(.system(size: 11)).foregroundStyle(secondaryInk)
+                        if store.usageScope == .account {
+                            Button("查看本机小时曲线") { store.usageScope = .local }
+                                .buttonStyle(.plain).font(.system(size: 10)).foregroundStyle(mint)
+                        }
+                    }.padding(8).background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 6))
                 }
             }
-            .accessibilityLabel("今日按小时观测的 Token 消耗")
             Text(store.samplingNote).font(.system(size: 8)).foregroundStyle(secondaryInk)
         }
     }
@@ -220,7 +256,7 @@ struct IslandView: View {
         let selectedTokens = store.snapshot?.tokens(on: store.selectedDate)
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("用量日历").font(.system(size: 12, weight: .medium))
+                Text("用量日历 · 账号").font(.system(size: 12, weight: .medium))
                 Spacer()
                 Text("最近 30 天").font(.system(size: 9)).foregroundStyle(secondaryInk)
             }
@@ -305,7 +341,7 @@ struct IslandView: View {
                 }.buttonStyle(.plain).disabled(store.isRefreshing || store.isDemo).help("刷新用量")
             }
             if store.snapshot != nil {
-                Text(store.snapshot?.localUsage == nil ? "账号日统计 · 服务端可能延迟更新" : "今日为本机任务 · 其余日期为账号日统计")
+                Text(store.sourceNote)
                     .font(.system(size: 8)).foregroundStyle(.white.opacity(0.26))
             }
         }

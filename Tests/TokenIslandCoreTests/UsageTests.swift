@@ -37,6 +37,33 @@ private func date(_ string: String) -> Date { ISO8601DateFormatter().date(from: 
     #expect(TokenFormat.compact(0) == "0")
 }
 
+@Test func accountTotalsTakePrecedenceWithoutAddingLocalRecords() {
+    let now = date("2026-10-28T08:00:00Z"), calendar = utcCalendar()
+    let local = LocalUsage(day: "2026-10-28", hours: [HourUsage(hour: now, tokens: 200)], sessionCount: 1)
+    let snapshot = UsageSnapshot(identity: "test", plan: "plus", days: [DailyUsage(startDate: "2026-10-28", tokens: 1000)], limits: nil, updatedAt: now, localUsage: local)
+    #expect(snapshot.tokens(on: now, calendar: calendar) == 1000)
+    #expect(snapshot.tokens(on: now, scope: .account, calendar: calendar) == 1000)
+    #expect(snapshot.tokens(on: now, scope: .local, calendar: calendar) == 200)
+}
+
+@Test func pendingAccountTodayNeverSilentlyFallsBackToLocalOrYesterday() {
+    let now = date("2026-10-28T08:00:00Z"), calendar = utcCalendar()
+    let local = LocalUsage(day: "2026-10-28", hours: [HourUsage(hour: now, tokens: 200)], sessionCount: 1)
+    let snapshot = UsageSnapshot(identity: "test", plan: "plus", days: [DailyUsage(startDate: "2026-10-27", tokens: 1000)], limits: nil, updatedAt: now, localUsage: local)
+    #expect(snapshot.tokens(on: now, scope: .account, calendar: calendar) == nil)
+    #expect(snapshot.tokens(on: now, scope: .local, calendar: calendar) == 200)
+    #expect(snapshot.latestAccountDay?.startDate == "2026-10-27")
+    #expect(snapshot.tokens(on: now.addingTimeInterval(-86400), scope: .local, calendar: calendar) == nil)
+}
+
+@Test func accountReportedZeroIsNotReplacedByLocalUsage() {
+    let now = date("2026-10-28T08:00:00Z"), calendar = utcCalendar()
+    let local = LocalUsage(day: "2026-10-28", hours: [HourUsage(hour: now, tokens: 200)], sessionCount: 1)
+    let snapshot = UsageSnapshot(identity: "test", plan: "plus", days: [DailyUsage(startDate: "2026-10-28", tokens: 0)], limits: nil, updatedAt: now, localUsage: local)
+    #expect(snapshot.tokens(on: now, scope: .account, calendar: calendar) == 0)
+    #expect(snapshot.latestAccountDay?.tokens == 0)
+}
+
 @Test func calendarUsesThirtyActualDatesAcrossMonthAndYearBoundaries() {
     let calendar = utcCalendar()
     let days = DayKey.recentDates(now: date("2026-01-03T12:00:00Z"), calendar: calendar)

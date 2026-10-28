@@ -17,7 +17,7 @@ import TokenIslandCore
                 let provider = ChatGPTProvider()
                 do {
                     if let result = try await provider.fetch() {
-                        print("ChatGPT connection OK; plan=\(result.plan); dailyBuckets=\(result.days?.count ?? 0); quotaBuckets=\(result.limits?.buckets.count ?? 0); todayAvailable=\(result.tokens(on: Date()) != nil)")
+                        print("ChatGPT connection OK; plan=\(result.plan); dailyBuckets=\(result.days?.count ?? 0); quotaBuckets=\(result.limits?.buckets.count ?? 0); accountTodayAvailable=\(result.tokens(on: Date(), scope: .account) != nil); localTodayAvailable=\(result.tokens(on: Date(), scope: .local) != nil)")
                         print("Latest daily bucket date: \(result.days?.map(\.startDate).max() ?? "unavailable")")
                         print("Local desktop events: sessions=\(result.localUsage?.sessionCount ?? 0); hourlyBuckets=\(result.localUsage?.hours.count ?? 0)")
                         if let warning = result.warning { print("Warning: \(warning)") }
@@ -38,7 +38,7 @@ import TokenIslandCore
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in await self?.store.refresh() }
         }
-        if CommandLine.arguments.contains("--expanded") { store.pinned = true; island?.reveal() }
+        if CommandLine.arguments.contains("--expanded") { island?.reveal() }
     }
     private func configureMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -74,8 +74,13 @@ import TokenIslandCore
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
     }
     private func renderPreview(to path: String) {
-        store.expanded = true
-        let renderer = ImageRenderer(content: IslandView(store: store, forExport: true))
+        let compact = CommandLine.arguments.contains("--compact")
+        store.expanded = !compact
+        store.detailHeight = 740
+        let renderer = ImageRenderer(content: IslandView(store: store, forExport: true)
+            .frame(width: compact ? store.compactWidth : store.expandedWidth,
+                   height: compact ? store.headerHeight : store.expandedHeight, alignment: .top)
+            .clipped())
         renderer.scale = 2
         guard let cg = renderer.cgImage else { print("Preview rendering failed"); return }
         let bitmap = NSBitmapImageRep(cgImage: cg)

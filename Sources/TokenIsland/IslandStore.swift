@@ -12,9 +12,14 @@ import TokenIslandCore
     @Published var error: String?
     @Published var isDemo = false
     @Published var expanded = false
-    @Published var pinned = false
+    @Published var usageScope: UsageScope = .account {
+        didSet {
+            UserDefaults.standard.set(usageScope.rawValue, forKey: "usageScope")
+            updateHours()
+        }
+    }
     @Published var notchWidth: CGFloat = 0
-    @Published var headerHeight: CGFloat = 38
+    @Published var headerHeight: CGFloat = 28
     @Published var detailHeight: CGFloat = 680
     @Published var selectedBucketID: String?
     @Published var selectedDate = Date()
@@ -23,14 +28,17 @@ import TokenIslandCore
     private var identity: String?
     private var pollTask: Task<Void, Never>?
     private var generation = 0
-    var onResize: (() -> Void)?
+    private var accountHours: [HourUsage] = []
+    private var demoHours: [HourUsage] = []
+    var onExpansionChange: ((Bool) -> Void)?
 
     init(provider: ChatGPTProvider? = nil) {
         self.provider = provider ?? ChatGPTProvider()
+        usageScope = UsageScope(rawValue: UserDefaults.standard.string(forKey: "usageScope") ?? "") ?? .account
         self.provider.client.onAccountChanged = { [weak self] in
             guard let self, !self.isDemo else { return }
             self.generation += 1
-            self.snapshot = nil; self.hours = []; self.identity = nil
+            self.snapshot = nil; self.hours = []; self.accountHours = []; self.identity = nil
             self.isLoggingIn = false
             Task { [weak self] in
                 while self?.isRefreshing == true {
@@ -40,20 +48,31 @@ import TokenIslandCore
             }
         }
     }
-    var todayTokens: Int? { snapshot?.tokens(on: Date()) }
+    var todayTokens: Int? { snapshot?.tokens(on: Date(), scope: usageScope) }
+    var compactTokenText: String {
+        if snapshot != nil, usageScope == .account, todayTokens == nil { return "待同步" }
+        return TokenFormat.compact(todayTokens)
+    }
     var selectedBucket: QuotaBucket? {
         let buckets = snapshot?.limits?.buckets ?? []
         return buckets.first { $0.id == selectedBucketID }?.bucket ?? buckets.first?.bucket
     }
     var quota: QuotaWindow? { selectedBucket?.primary ?? selectedBucket?.secondary }
     var quotaText: String { quota.map { "\(Int($0.remaining))%" } ?? "—" }
-    var compactWidth: CGFloat { max(300, notchWidth + 216) }
+    var compactWidth: CGFloat { max(220, notchWidth + 160) }
     var expandedWidth: CGFloat { max(428, compactWidth) }
     var expandedHeight: CGFloat { headerHeight + detailHeight }
     var samplingNote: String {
         if isDemo { return "演示数据 · 小时曲线仅用于预览" }
-        if snapshot?.localUsage != nil { return "本机桌面任务事件 · 按本地时间分组" }
-        return "启动后每分钟采样 · 空白时段未观测"
+        if usageScope == .local { return "本机桌面任务事件 · 按本地时间分组" }
+        return "账号日累计增量采样 · 非服务端小时明细"
+    }
+    var sourceNote: String {
+        usageScope == .account ? "账号日统计覆盖服务端已汇总活动 · 可能延迟" : "今日与小时为本机任务 · 日历仍为账号日统计"
+    }
+    private func updateHours() {
+        if isDemo { hours = demoHours }
+        else { hours = usageScope == .account ? accountHours : snapshot?.localUsage?.hours ?? [] }
     }
 
     func start() {
@@ -75,7 +94,7 @@ import TokenIslandCore
             guard currentGeneration == generation else { return }
             error = nil; signedOut = result == nil
             guard let result else {
-                snapshot = nil; hours = []; identity = nil; sampler = UsageSampler()
+                snapshot = nil; hours = []; accountHours = []; identity = nil; sampler = UsageSampler()
                 return
             }
             if identity != result.identity {
@@ -83,12 +102,10 @@ import TokenIslandCore
                 sampler = loadSampler(for: result.identity)
             }
             snapshot = result
-            if let local = result.localUsage { hours = local.hours }
-            else {
-                sampler.observe(total: result.tokens(on: result.updatedAt), at: result.updatedAt)
-                hours = sampler.today(at: result.updatedAt)
-                saveSampler(for: result.identity)
-            }
+            sampler.observe(total: result.tokens(on: result.updatedAt, scope: .account), at: result.updatedAt)
+            accountHours = sampler.today(at: result.updatedAt)
+            updateHours()
+            saveSampler(for: result.identity)
         } catch {
             guard currentGeneration == generation else { return }
             self.error = error.localizedDescription
@@ -114,14 +131,14 @@ import TokenIslandCore
     func openUsage() { NSWorkspace.shared.open(URL(string: "https://chatgpt.com/#settings/Usage")!) }
     func setExpanded(_ value: Bool) {
         guard expanded != value else { return }
-        expanded = value
-        onResize?()
+        if let onExpansionChange { onExpansionChange(value) }
+        else { expanded = value }
     }
-    func togglePin() { pinned.toggle(); if pinned { setExpanded(true) } }
+    func toggleExpanded() { setExpanded(!expanded) }
     func setDemo(_ value: Bool) {
         generation += 1; provider.stop()
         isDemo = value; error = nil; signedOut = false; isLoggingIn = false
-        snapshot = nil; hours = []; identity = nil; selectedBucketID = nil
+        snapshot = nil; hours = []; accountHours = []; identity = nil; selectedBucketID = nil
         if value {
             let now = Date(), calendar = Calendar.current
             let days = DayKey.recentDates(now: now).enumerated().map { index, date in
@@ -130,11 +147,13 @@ import TokenIslandCore
             let data = Data("""
             {"rateLimits":{"limitId":"codex","limitName":"ChatGPT Work","primary":{"usedPercent":28,"windowDurationMins":300,"resetsAt":\(now.addingTimeInterval(9420).timeIntervalSince1970)},"secondary":{"usedPercent":46,"windowDurationMins":10080,"resetsAt":\(now.addingTimeInterval(242000).timeIntervalSince1970)}}}
             """.utf8)
-            snapshot = UsageSnapshot(identity: "demo", plan: "Plus", days: days, limits: try? JSONDecoder().decode(LimitsResponse.self, from: data), updatedAt: now)
             let today = calendar.startOfDay(for: now)
-            hours = (0...calendar.component(.hour, from: now)).map { h in
+            demoHours = (0...calendar.component(.hour, from: now)).map { h in
                 HourUsage(hour: calendar.date(byAdding: .hour, value: h, to: today)!, tokens: h < 7 ? 0 : Int(abs(sin(Double(h) * 1.3)) * 15000 + 3000))
             }
+            snapshot = UsageSnapshot(identity: "demo", plan: "Plus", days: days, limits: try? JSONDecoder().decode(LimitsResponse.self, from: data), updatedAt: now,
+                                     localUsage: LocalUsage(day: DayKey.string(now), hours: demoHours, sessionCount: 1))
+            updateHours()
         } else {
             Task { [weak self] in
                 while self?.isRefreshing == true {

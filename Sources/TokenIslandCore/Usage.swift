@@ -68,6 +68,11 @@ public struct LimitsResponse: Decodable {
     }
 }
 
+public enum UsageScope: String, CaseIterable {
+    case account, local
+    public var title: String { self == .account ? "当前账号" : "本机实时" }
+}
+
 public struct UsageSnapshot {
     public let identity: String
     public let plan: String
@@ -80,11 +85,12 @@ public struct UsageSnapshot {
         self.identity = identity; self.plan = plan; self.days = days
         self.limits = limits; self.updatedAt = updatedAt; self.warning = warning; self.localUsage = localUsage
     }
-    public func tokens(on date: Date, calendar: Calendar = .current) -> Int? {
+    public func tokens(on date: Date, scope: UsageScope = .account, calendar: Calendar = .current) -> Int? {
         let key = DayKey.string(date, calendar: calendar)
-        if let localUsage, localUsage.day == key { return localUsage.total }
+        if scope == .local { return localUsage?.day == key ? localUsage?.total : nil }
         return days?.first { $0.startDate == key }?.tokens
     }
+    public var latestAccountDay: DailyUsage? { days?.max { $0.startDate < $1.startDate } }
 }
 
 public enum DayKey {
