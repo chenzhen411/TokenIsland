@@ -8,6 +8,11 @@ private let secondaryInk = Color.white.opacity(0.46)
 struct IslandView: View {
     @ObservedObject var store: IslandStore
     var forExport = false
+    private var headerMetricWidth: CGFloat {
+        let width = store.expanded ? store.expandedWidth : store.compactWidth
+        let separatorWidth = store.notchWidth > 0 ? store.notchWidth : 31
+        return max(0, (width - separatorWidth - 16) / 2)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,9 +60,12 @@ struct IslandView: View {
             HStack(spacing: 5) {
                 Image(systemName: store.signedOut ? "person.crop.circle.badge.exclamationmark" : store.usageScope == .account ? "cloud" : "desktopcomputer")
                     .font(.system(size: 11, weight: .semibold)).foregroundStyle(mint)
+                    .fixedSize()
                 Text(store.signedOut ? "请登录" : store.compactTokenText)
                     .font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
-            }.frame(maxWidth: .infinity)
+                    .lineLimit(1).minimumScaleFactor(0.75).allowsTightening(true)
+                    .layoutPriority(1)
+            }.frame(width: headerMetricWidth)
             if store.notchWidth > 0 { Color.clear.frame(width: store.notchWidth) }
             else { Capsule().fill(.white.opacity(0.18)).frame(width: 1, height: 12).padding(.horizontal, 15) }
             HStack(spacing: 5) {
@@ -66,8 +74,9 @@ struct IslandView: View {
                     .rotationEffect(.degrees(-90)).frame(width: 10, height: 10)
                     .background(Circle().stroke(.white.opacity(0.2), lineWidth: 2))
                 Text(store.quotaText).font(.system(size: 12, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .lineLimit(1).minimumScaleFactor(0.75)
                 if store.isDemo { Circle().fill(.orange).frame(width: 4, height: 4) }
-            }.frame(maxWidth: .infinity)
+            }.frame(width: headerMetricWidth)
         }
         .padding(.horizontal, 8)
         .frame(height: store.headerHeight)

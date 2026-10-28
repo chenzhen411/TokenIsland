@@ -34,6 +34,10 @@ private final class IslandCanvas: NSView {
     private let canvas: IslandCanvas
     private var collapseTask: Task<Void, Never>?
     private var screenObserver: NSObjectProtocol?
+    private var localClickMonitor: Any?
+    private var globalClickMonitor: Any?
+    private var keyObserver: NSObjectProtocol?
+    private var activationObserver: NSObjectProtocol?
     private let transitionDuration = 0.18
 
     init(store: IslandStore) {
@@ -54,6 +58,17 @@ private final class IslandCanvas: NSView {
             Task { @MainActor in self?.updateScreen() }
         }
         updateScreen()
+        installClickMonitors()
+        keyObserver = NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.store.setExpanded(false) }
+        }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+                      app.bundleIdentifier != Bundle.main.bundleIdentifier else { return }
+                self?.store.setExpanded(false)
+            }
+        }
     }
     private var targetScreen: NSScreen? {
         NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) ?? NSScreen.main ?? NSScreen.screens.first
@@ -74,6 +89,27 @@ private final class IslandCanvas: NSView {
     func show() { panel.orderFrontRegardless() }
     func reveal() { store.setExpanded(true); panel.orderFrontRegardless() }
 
+    private func installClickMonitors() {
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        // A global monitor observes other apps; a local monitor covers our own
+        // status item and app windows. Neither consumes the click.
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
+            MainActor.assumeIsolated { self?.store.setExpanded(false) }
+        }
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: clicks) { [weak self] event in
+            MainActor.assumeIsolated { self?.handleLocalClick(event) }
+            return event
+        }
+    }
+
+    private func handleLocalClick(_ event: NSEvent) {
+        guard store.expanded else { return }
+        // Keep menus opened from the island usable, even if they extend outside it.
+        if let window = event.window, window !== panel, window.level == .popUpMenu { return }
+        let location = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) } ?? NSEvent.mouseLocation
+        if !panel.frame.contains(location) { store.setExpanded(false) }
+    }
+
     private func resizeWindow(expanded: Bool) {
         guard let screen = targetScreen else { return }
         let width = expanded ? store.expandedWidth : store.compactWidth
@@ -84,11 +120,12 @@ private final class IslandCanvas: NSView {
     private func transition(to expanded: Bool) {
         collapseTask?.cancel()
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        if expanded { resizeWindow(expanded: true) }
+        if expanded { resizeWindow(expanded: true); panel.makeKey() }
         withAnimation(reduceMotion ? nil : .easeOut(duration: transitionDuration)) {
             store.expanded = expanded
         }
         if !expanded {
+            panel.resignKey()
             if reduceMotion { resizeWindow(expanded: false); return }
             collapseTask = Task { [weak self] in
                 do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
@@ -100,7 +137,13 @@ private final class IslandCanvas: NSView {
     func close() {
         collapseTask?.cancel()
         store.onExpansionChange = nil
+        if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
+        if let globalClickMonitor { NSEvent.removeMonitor(globalClickMonitor) }
+        localClickMonitor = nil
+        globalClickMonitor = nil
         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        if let keyObserver { NotificationCenter.default.removeObserver(keyObserver) }
+        if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
         panel.close()
     }
 }
