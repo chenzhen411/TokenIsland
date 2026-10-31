@@ -1,5 +1,7 @@
 # TokenIsland
 
+<img src="Resources/AppIcon.png" alt="TokenIsland 应用图标" width="128" />
+
 在 Mac 顶部灵动岛查看 ChatGPT Work / Codex 桌面任务的 Token 用量与订阅剩余额度。原生 SwiftUI + AppKit，macOS 14 及以上，无第三方依赖。普通 ChatGPT 聊天的完整 Token 用量暂不支持。
 
 <img src="docs/preview.png" alt="TokenIsland 展开界面，演示数据" width="428" />
@@ -111,6 +113,7 @@ Sources/TokenIsland/          SwiftUI 界面、悬浮窗口、菜单栏与状态
 Sources/TokenIslandCore/      Provider 协议、ChatGPT app-server、额度模型、采样
 Tests/TokenIslandCoreTests/   数据口径、日期边界、差分与 JSON-RPC 测试
 Resources/Info.plist          macOS 应用配置
+Resources/AppIcon.png         1024 px 透明图标原稿，构建时生成多尺寸 ICNS
 scripts/                     构建与测试
 ```
 
