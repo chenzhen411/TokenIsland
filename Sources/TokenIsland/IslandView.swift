@@ -351,6 +351,15 @@ struct IslandView: View {
                 Button { Task { await store.refresh() } } label: {
                     Image(systemName: "arrow.clockwise").font(.system(size: 10)).foregroundStyle(secondaryInk).frame(width: 23, height: 23)
                 }.buttonStyle(.plain).disabled(store.isRefreshing || store.isDemo).help("刷新用量")
+                Button { NSApplication.shared.terminate(nil) } label: {
+                    Label("退出", systemImage: "power")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding(.horizontal, 9).frame(height: 28)
+                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain).help("退出 TokenIsland")
+                    .accessibilityLabel("退出 TokenIsland")
             }
             if store.snapshot != nil {
                 Text(store.sourceNote)
